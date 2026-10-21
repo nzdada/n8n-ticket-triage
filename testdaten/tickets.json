@@ -1,0 +1,81 @@
+[
+  {
+    "name": "Heizungsausfall mit Kindern",
+    "erwartet": { "mit_ki": ["eskaliert"], "ohne_ki": ["eskaliert"] },
+    "ticket": {
+      "kunde_name": "Familie Beispiel",
+      "kunde_email": "familie.beispiel@example.com",
+      "betreff": "Heizung ausgefallen",
+      "text": "Seit heute Morgen ist unsere Heizung ausgefallen, die Wärmepumpe zeigt Fehler E12. Wir haben zwei kleine Kinder. Bitte rufen Sie zurück unter 0171 2345678."
+    }
+  },
+  {
+    "name": "Rechnung doppelt abgebucht",
+    "erwartet": { "mit_ki": ["angelegt"], "ohne_ki": ["manuelle_pruefung"] },
+    "ticket": {
+      "kunde_name": "Max Mustermann",
+      "kunde_email": "max.mustermann@example.com",
+      "betreff": "Abschlag zweimal abgebucht",
+      "text": "Sie haben die Abschlagsrechnung 2026-0815 zweimal von meinem Konto DE89 3704 0044 0532 0130 00 abgebucht. Bitte erstatten Sie den doppelten Betrag."
+    }
+  },
+  {
+    "name": "Termin verschieben",
+    "erwartet": { "mit_ki": ["angelegt"], "ohne_ki": ["manuelle_pruefung"] },
+    "ticket": {
+      "kunde_name": "Erika Musterfrau",
+      "kunde_email": "erika.musterfrau@example.com",
+      "betreff": "Beratungstermin verschieben",
+      "text": "Können wir den Beratungstermin am 12.11. um eine Woche nach hinten verschieben? Vormittags passt es mir am besten."
+    }
+  },
+  {
+    "name": "Anfrage Photovoltaik und Förderung",
+    "erwartet": { "mit_ki": ["angelegt"], "ohne_ki": ["manuelle_pruefung"] },
+    "ticket": {
+      "kunde_name": "Jonas Probe",
+      "kunde_email": "jonas.probe@example.com",
+      "betreff": "PV-Anlage mit Speicher",
+      "text": "Wir interessieren uns für eine Photovoltaik-Anlage mit Speicher für unser Einfamilienhaus. Welche Förderung gibt es aktuell und was kostet ein Angebot?"
+    }
+  },
+  {
+    "name": "Beschwerde über Monteur",
+    "erwartet": { "mit_ki": ["angelegt"], "ohne_ki": ["manuelle_pruefung"] },
+    "ticket": {
+      "kunde_name": "Sabine Test",
+      "kunde_email": "sabine.test@example.com",
+      "betreff": "Beschwerde Montage",
+      "text": "Der Monteur kam drei Stunden zu spät und hat den Keller verschmutzt hinterlassen. Ich bin sehr unzufrieden und erwarte eine Rückmeldung."
+    }
+  },
+  {
+    "name": "Unklare Anfrage",
+    "erwartet": { "mit_ki": ["manuelle_pruefung", "angelegt"], "ohne_ki": ["manuelle_pruefung"] },
+    "ticket": {
+      "kunde_name": "Paul Unklar",
+      "kunde_email": "paul.unklar@example.com",
+      "betreff": "Frage",
+      "text": "Hallo, ich hätte da mal eine Frage zu dem Ding im Keller, das manchmal klackert. Ist das normal?"
+    }
+  },
+  {
+    "name": "Duplikat von Ticket 1",
+    "erwartet": { "mit_ki": ["duplikat"], "ohne_ki": ["duplikat"] },
+    "ticket": {
+      "kunde_name": "Familie Beispiel",
+      "kunde_email": "familie.beispiel@example.com",
+      "betreff": "Heizung ausgefallen",
+      "text": "Seit heute Morgen ist unsere Heizung ausgefallen, die Wärmepumpe zeigt Fehler E12. Wir haben zwei kleine Kinder. Bitte rufen Sie zurück unter 0171 2345678."
+    }
+  },
+  {
+    "name": "Ungültig: E-Mail fehlt",
+    "erwartet": { "mit_ki": ["abgelehnt"], "ohne_ki": ["abgelehnt"] },
+    "ticket": {
+      "kunde_name": "Ohne Adresse",
+      "betreff": "Rückruf",
+      "text": "Bitte rufen Sie mich zurück."
+    }
+  }
+]

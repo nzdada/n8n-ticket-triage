@@ -1,0 +1,47 @@
+{
+  "name": "Fehler-Alarm (Demo)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-0000-4000-8000-000000000022",
+      "name": "Fehler im Workflow",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Läuft, wenn im Ticket-Workflow ein unerwarteter Fehler auftritt.\n// Bereitet eine Alarm-Nachricht vor. Im Betrieb: Slack-, Teams- oder E-Mail-Node anhängen.\nreturn $input.all().map((item) => {\n  const e = item.json;\n  return { json: {\n    alarm: {\n      kanal: '#automation-alarme',\n      text: 'Fehler im Workflow \"' + (e.workflow?.name ?? '?') + '\" in Node \"' + (e.execution?.lastNodeExecuted ?? '?') + '\": ' + (e.execution?.error?.message ?? 'unbekannt'),\n      ausfuehrung: e.execution?.url ?? '',\n    },\n  } };\n});"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000023",
+      "name": "Alarm vorbereiten",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Fehler im Workflow": {
+      "main": [
+        [
+          {
+            "node": "Alarm vorbereiten",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

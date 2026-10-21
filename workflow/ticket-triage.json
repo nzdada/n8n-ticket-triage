@@ -1,0 +1,548 @@
+{
+  "name": "Ticket-Triage mit KI (Demo)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Ticket-Triage mit KI\nEingang → Prüfung → Duplikate → Datenminimierung → KI-Einordnung mit Fallback → Routing.\n\nNeue Version immer **erst inaktiv** mit den Testtickets prüfen (`test/teste-workflow.js`), dann aktivieren.\nAlle Daten in diesem Repo sind erfunden.",
+        "width": 620,
+        "height": 240
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000001",
+      "name": "Notiz 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ticket-triage",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000002",
+      "name": "Ticket eingang",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "8f3d2c1a-4b5e-4c6d-9e7f-0a1b2c3d4e5f"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Eingang prüfen und vereinheitlichen. Ungültige Tickets gehen mit 400 zurück.\nconst norm = (s) => String(s ?? '').toLowerCase().replace(/\\s+/g, ' ').trim();\nreturn $input.all().map((item) => {\n  const b = item.json.body ?? item.json;\n  const fehler = [];\n  const email = String(b.kunde_email ?? '').trim().toLowerCase();\n  const betreff = String(b.betreff ?? '').trim();\n  const text = String(b.text ?? '').trim();\n  if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) fehler.push('kunde_email fehlt oder ist ungültig');\n  if (betreff.length < 3) fehler.push('betreff fehlt');\n  if (text.length < 5) fehler.push('text fehlt');\n  if (text.length > 5000) fehler.push('text ist zu lang (max. 5000 Zeichen)');\n  // Fingerabdruck für die Duplikat-Prüfung: gleiche Absenderin, gleicher Betreff, gleicher Text\n  const roh = email + '|' + norm(betreff) + '|' + norm(text);\n  let h = 2166136261;\n  for (let i = 0; i < roh.length; i++) { h ^= roh.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }\n  return { json: {\n    gueltig: fehler.length === 0,\n    fehler,\n    fingerabdruck: 't' + h.toString(16),\n    ticket: { kunde_email: email, kunde_name: String(b.kunde_name ?? '').trim(), betreff, text,\n              kanal: String(b.kanal ?? 'email'), eingang: new Date().toISOString() },\n    antwort: { status: 'abgelehnt', fehler },\n  } };\n});"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000003",
+      "name": "Ticket prüfen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.gueltig }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000004",
+      "name": "Gültig?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.antwort) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000005",
+      "name": "Antwort: ungültig (400)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Doppelte Tickets (gleicher Fingerabdruck innerhalb von 24 Stunden) werden nicht erneut bearbeitet.\n// Hinweis: n8n speichert diese Daten nur bei produktiven Ausführungen (aktiver Workflow).\nconst speicher = $getWorkflowStaticData('global');\nspeicher.gesehen = speicher.gesehen || {};\nconst jetzt = Date.now();\nconst FENSTER = 24 * 60 * 60 * 1000;\nfor (const [fp, zeit] of Object.entries(speicher.gesehen)) {\n  if (jetzt - zeit > FENSTER) delete speicher.gesehen[fp];\n}\nreturn $input.all().map((item) => {\n  const fp = item.json.fingerabdruck;\n  const duplikat = Boolean(speicher.gesehen[fp]);\n  if (!duplikat) speicher.gesehen[fp] = jetzt;\n  return { json: { ...item.json, duplikat,\n    antwort: { status: 'duplikat', ticket_id: fp, hinweis: 'Identisches Ticket wurde in den letzten 24 Stunden bereits bearbeitet.' } } };\n});"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000006",
+      "name": "Duplikat prüfen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.duplikat }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000007",
+      "name": "Duplikat?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        880,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.antwort) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000008",
+      "name": "Antwort: Duplikat (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Datenminimierung: Die KI bekommt nur Betreff und Text, persönliche Daten werden vorher maskiert.\n// Name und E-Mail-Adresse der Kundin verlassen n8n nicht.\nconst maskiere = (s) => String(s)\n  .replace(/\\b[A-Z]{2}\\d{2}(?:\\s?[A-Z0-9]{4}){3,7}(?:\\s?[A-Z0-9]{1,4})?\\b/gi, '[IBAN]')\n  .replace(/[^\\s@]+@[^\\s@]+\\.[^\\s@]+/g, '[E-MAIL]')\n  .replace(/(?:\\+49|\\b0)[\\d\\s\\/\\-()]{7,}\\d/g, '[TELEFON]');\n\nconst SCHEMA = {\n  type: 'object',\n  properties: {\n    kategorie: { type: 'string', enum: ['technische_stoerung', 'termin', 'rechnung', 'angebot', 'beschwerde', 'sonstiges'] },\n    dringlichkeit: { type: 'string', enum: ['hoch', 'mittel', 'niedrig'] },\n    konfidenz: { type: 'number' },\n    begruendung: { type: 'string' },\n  },\n  required: ['kategorie', 'dringlichkeit', 'konfidenz', 'begruendung'],\n  additionalProperties: false,\n};\n\nconst SYSTEM = [\n  'Du ordnest Kundenanfragen eines Anbieters für energetische Sanierung ein (Wärmepumpe, Photovoltaik, Heizung, Fenster).',\n  'kategorie: technische_stoerung, termin, rechnung, angebot, beschwerde oder sonstiges.',\n  'dringlichkeit \"hoch\": Heizung, Warmwasser oder Strom sind ausgefallen, Wasser tritt aus, es besteht ein Sicherheitsrisiko, oder ein Termin in den nächsten 48 Stunden ist betroffen.',\n  'dringlichkeit \"mittel\": Beschwerden, Rechnungsfehler, Störungen ohne Ausfall. Sonst \"niedrig\".',\n  'konfidenz: Zahl zwischen 0 und 1, wie sicher die Einordnung ist. Ist die Anfrage unklar oder passt in mehrere Kategorien, gib einen niedrigen Wert.',\n  'begruendung: ein kurzer Satz auf Deutsch.',\n  'Persönliche Daten sind maskiert, zum Beispiel [E-MAIL] oder [TELEFON]. Erfinde nichts dazu.',\n].join('\\n');\n\nreturn $input.all().map((item) => {\n  const t = item.json.ticket;\n  const betreff = maskiere(t.betreff);\n  const text = maskiere(t.text);\n  return { json: { ...item.json,\n    ticket_maskiert: { betreff, text },\n    ki_anfrage: {\n      model: 'claude-opus-5-5',\n      max_tokens: 2048,\n      fallbacks: 'default',\n      system: SYSTEM,\n      output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },\n      messages: [{ role: 'user', content: 'Betreff: ' + betreff + '\\n\\nText:\\n' + text }],\n    },\n  } };\n});"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000009",
+      "name": "Daten minimieren",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "server-side-fallback-2026-07-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.ki_anfrage) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000010",
+      "name": "KI-Einordnung (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "notes": "Credential: Header Auth, Name x-api-key, Wert = Anthropic-API-Key. Fehlt der Key oder ist die API down, greift im nächsten Schritt die Regel-Einordnung."
+    },
+    {
+      "parameters": {
+        "jsCode": "// KI-Antwort prüfen. Ist die KI nicht erreichbar, lehnt ab oder liefert Unbrauchbares,\n// greift eine einfache Regel-Einordnung. Unsichere Fälle entscheidet ein Mensch.\nconst KATEGORIEN = ['technische_stoerung', 'termin', 'rechnung', 'angebot', 'beschwerde', 'sonstiges'];\nconst STUFEN = ['hoch', 'mittel', 'niedrig'];\nconst SCHWELLE = 0.7;\n\nfunction regeln(betreff, text) {\n  const t = (betreff + ' ' + text).toLowerCase();\n  const passt = (re) => re.test(t);\n  if (passt(/heizung\\s+(ist\\s+)?(aus|ausgefallen|kalt|defekt|geht nicht)|kein(e|en)?\\s+(warm)?wasser|warmwasser\\s+(ist\\s+)?(aus|weg|kalt)|wasser\\s+(tritt|läuft|tropft)|undicht|leck|brand|rauch|stromausfall|strom\\s+(ist\\s+)?(weg|aus)|notfall|gefahr/))\n    return { kategorie: 'technische_stoerung', dringlichkeit: 'hoch', konfidenz: 0.6 };\n  if (passt(/rechnung|abbuchung|abgebucht|zahlung|mahnung|betrag|gutschrift/))\n    return { kategorie: 'rechnung', dringlichkeit: 'mittel', konfidenz: 0.6 };\n  if (passt(/beschwerde|unzufrieden|ärger|enttäuscht|unverschämt|unfreundlich/))\n    return { kategorie: 'beschwerde', dringlichkeit: 'mittel', konfidenz: 0.6 };\n  if (passt(/termin|verschieb|absag|uhrzeit|kommt der monteur/))\n    return { kategorie: 'termin', dringlichkeit: passt(/\\b(heute|morgen)\\b/) ? 'hoch' : 'niedrig', konfidenz: 0.6 };\n  if (passt(/angebot|kosten|preis|förderung|beratung|wärmepumpe|photovoltaik|pv-anlage/))\n    return { kategorie: 'angebot', dringlichkeit: 'niedrig', konfidenz: 0.6 };\n  return { kategorie: 'sonstiges', dringlichkeit: 'niedrig', konfidenz: 0.3 };\n}\n\nconst vorher = $('Daten minimieren').all();\nreturn $input.all().map((item, i) => {\n  const basis = vorher[i].json;\n  const r = item.json;\n  let einordnung, quelle = 'ki', hinweis = '';\n  try {\n    if (r.error) throw new Error('KI nicht erreichbar');\n    if (r.stop_reason === 'refusal') throw new Error('KI hat die Anfrage abgelehnt');\n    const block = (r.content || []).find((b) => b.type === 'text');\n    if (!block) throw new Error('KI-Antwort ohne Text');\n    const d = JSON.parse(block.text);\n    if (!KATEGORIEN.includes(d.kategorie) || !STUFEN.includes(d.dringlichkeit) || typeof d.konfidenz !== 'number')\n      throw new Error('KI-Antwort unvollständig');\n    einordnung = { kategorie: d.kategorie, dringlichkeit: d.dringlichkeit,\n                   konfidenz: Math.max(0, Math.min(1, d.konfidenz)), begruendung: String(d.begruendung || '') };\n  } catch (e) {\n    einordnung = { ...regeln(basis.ticket.betreff, basis.ticket.text), begruendung: 'Regel-Einordnung' };\n    quelle = 'fallback_regeln';\n    hinweis = e.message;\n  }\n  // Dringendes geht immer sofort raus, auch wenn die Einordnung unsicher ist.\n  let route = 'standard';\n  if (einordnung.dringlichkeit === 'hoch') route = 'eskalation';\n  else if (einordnung.konfidenz < SCHWELLE) route = 'manuell';\n\n  return { json: {\n    ticket_id: basis.fingerabdruck,\n    ticket: basis.ticket,\n    ...einordnung,\n    quelle,\n    hinweis,\n    route,\n  } };\n});"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000011",
+      "name": "Antwort prüfen + Fallback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.route }}",
+              "operation": "equal",
+              "value2": "eskalation"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000012",
+      "name": "Eskalieren?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dringend: Support-Lead sofort benachrichtigen und Ticket mit hoher Priorität anlegen.\n// In der Demo wird die Nachricht nur vorbereitet. Im Betrieb: Slack-, Teams- oder Zoho-Desk-Node anhängen.\nreturn $input.all().map((item) => {\n  const j = item.json;\n  return { json: { ...j,\n    benachrichtigung: { kanal: '#support-eskalation',\n      text: 'Dringend (' + j.kategorie + '): ' + j.ticket.betreff + ' – ' + j.begruendung },\n    crm: { status: 'eskaliert', prioritaet: 'hoch', kategorie: j.kategorie },\n    antwort: { status: 'eskaliert', ticket_id: j.ticket_id, kategorie: j.kategorie, dringlichkeit: j.dringlichkeit,\n               konfidenz: j.konfidenz, quelle: j.quelle, begruendung: j.begruendung, hinweis: j.hinweis },\n  } };\n});"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000013",
+      "name": "Eskalation vorbereiten",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.antwort) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000014",
+      "name": "Antwort: eskaliert",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2200,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.route }}",
+              "operation": "equal",
+              "value2": "manuell"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000015",
+      "name": "Mensch entscheiden?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1980,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Unsicher: Ein Mensch entscheidet. Das Ticket landet in der Warteschlange \"Manuelle Prüfung\".\nreturn $input.all().map((item) => {\n  const j = item.json;\n  return { json: { ...j,\n    aufgabe: { warteschlange: 'manuelle-pruefung',\n      grund: 'Einordnung unsicher (Konfidenz ' + j.konfidenz + ', Quelle ' + j.quelle + ')' },\n    antwort: { status: 'manuelle_pruefung', ticket_id: j.ticket_id, vorschlag: j.kategorie, dringlichkeit: j.dringlichkeit,\n               konfidenz: j.konfidenz, quelle: j.quelle, begruendung: j.begruendung, hinweis: j.hinweis },\n  } };\n});"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000016",
+      "name": "Manuelle Prüfung",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.antwort) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000017",
+      "name": "Antwort: manuell",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalfall: Ticket mit Kategorie und Priorität im CRM anlegen.\n// In der Demo wird der Datensatz nur vorbereitet. Im Betrieb: Zoho-Desk-, HubSpot- oder HTTP-Node anhängen.\nreturn $input.all().map((item) => {\n  const j = item.json;\n  return { json: { ...j,\n    crm: { status: 'neu', kategorie: j.kategorie, prioritaet: j.dringlichkeit,\n           kontakt: j.ticket.kunde_email, betreff: j.ticket.betreff },\n    antwort: { status: 'angelegt', ticket_id: j.ticket_id, kategorie: j.kategorie, dringlichkeit: j.dringlichkeit,\n               konfidenz: j.konfidenz, quelle: j.quelle, begruendung: j.begruendung, hinweis: j.hinweis },\n  } };\n});"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000018",
+      "name": "Im CRM anlegen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.antwort) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000019",
+      "name": "Antwort: angelegt",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2420,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "content": "**Datenschutz:** Name und E-Mail gehen nie an die KI. IBAN, E-Mail und Telefon im Text werden maskiert.",
+        "width": 300,
+        "height": 120
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000020",
+      "name": "Notiz 20",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "content": "**Mensch entscheidet:** Dringendes wird immer eskaliert. Ist die KI unsicher (Konfidenz < 0,7) oder ausgefallen, landet das Ticket in der manuellen Prüfung.",
+        "width": 340,
+        "height": 140
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000021",
+      "name": "Notiz 21",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Ticket eingang": {
+      "main": [
+        [
+          {
+            "node": "Ticket prüfen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ticket prüfen": {
+      "main": [
+        [
+          {
+            "node": "Gültig?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gültig?": {
+      "main": [
+        [
+          {
+            "node": "Duplikat prüfen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Antwort: ungültig (400)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplikat prüfen": {
+      "main": [
+        [
+          {
+            "node": "Duplikat?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplikat?": {
+      "main": [
+        [
+          {
+            "node": "Antwort: Duplikat (200)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Daten minimieren",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daten minimieren": {
+      "main": [
+        [
+          {
+            "node": "KI-Einordnung (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "KI-Einordnung (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Antwort prüfen + Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Antwort prüfen + Fallback": {
+      "main": [
+        [
+          {
+            "node": "Eskalieren?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eskalieren?": {
+      "main": [
+        [
+          {
+            "node": "Eskalation vorbereiten",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mensch entscheiden?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eskalation vorbereiten": {
+      "main": [
+        [
+          {
+            "node": "Antwort: eskaliert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensch entscheiden?": {
+      "main": [
+        [
+          {
+            "node": "Manuelle Prüfung",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Im CRM anlegen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manuelle Prüfung": {
+      "main": [
+        [
+          {
+            "node": "Antwort: manuell",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Im CRM anlegen": {
+      "main": [
+        [
+          {
+            "node": "Antwort: angelegt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
